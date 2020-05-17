@@ -1,0 +1,369 @@
+---
+title: "final-draft"
+author: "Anne Lee Steele"
+date: "16/12/2019"
+output: html_document
+---
+
+
+```{r}
+# load packages
+library(ergm) 
+library(sna) 
+library(coda)
+library(latticeExtra)
+library(igraph)
+library(sna)
+library(dplyr)
+library(netdiffuseR)
+library(igraph)
+library(cluster)
+library(NetCluster)
+library(network)
+library(intergraph)
+library(dplyr)
+library(stargazer)
+library(dils)
+library(RColorBrewer)
+```
+
+
+## Edgelist
+
+````{r}
+#Import Edges
+nodes <- read.csv("node-list.csv", #import nodes
+                 stringsAsFactors = FALSE,
+                 header = TRUE)
+
+nodes_ord <- read.csv("nodes-ordered.csv", #import nodes
+                 stringsAsFactors = FALSE,
+                 header = TRUE)
+
+edges <- read.csv("edge-list.csv", #import nodes
+                 stringsAsFactors = FALSE,
+                 header = FALSE)
+
+edge_graph <- graph_from_edgelist(as.matrix(edges))
+edge_matrix <- as.matrix(get.adjacency(graph.data.frame(edges)))
+edge_graph2 <- graph_from_adjacency_matrix(edge_matrix)
+V(edge_graph2)
+
+# Add attributes
+edge_graph2
+summary(edge_graph2)
+nodes_ord$country
+edge_graph2 <- set_vertex_attr(edge_graph2, "dem", V(edge_graph2), "")
+edge_graph2 <- set_vertex_attr(edge_graph2, "gni", V(edge_graph2), "")
+edge_graph2 <- set_vertex_attr(edge_graph2, "geo", V(edge_graph2), "")
+attributes(V(edge_graph2)[1])
+V(edge_graph2)$dem
+V(edge_graph2)$gni
+V(edge_graph2)$geo
+V(edge_graph2)$name
+
+countries <- V(edge_graph2)$name
+
+ifelse(nodes_ord$country == V(edge_graph2)$name, V(edge_graph2)$dem <- nodes_ord$dem,  V(edge_graph2)$dem <- "NA")
+ifelse(nodes_ord$country == V(edge_graph2)$name, V(edge_graph2)$geo <- nodes_ord$geo,  V(edge_graph2)$geo <- "NA")
+ifelse(nodes_ord$country == V(edge_graph2)$name, V(edge_graph2)$gni <- nodes_ord$gni,  V(edge_graph2)$gni <- "NA")
+
+gni <- V(edge_graph2)$gni
+dem <- V(edge_graph2)$dem
+geo <- V(edge_graph2)$geo
+
+vertex.attributes(edge_graph2)
+graph.attributes(edge_graph2)
+
+# Graph communities
+par(mfrow=c(2,2))
+
+plot(edge_graph2,
+     # vertex.size = igraph::degree(test_graph)/2,
+     layout = layout_nicely,
+     edge.width = 0.3,
+     edge.arrow.size = 0.1,
+     vertex.size = igraph::degree(edge_graph2),
+     #vertex.label = "",
+     vertex.color = V(edge_graph2)$geo,
+     )
+
+plot(edge_graph2,
+     # vertex.size = igraph::degree(test_graph)/2,
+     layout = layout_nicely,
+     edge.width = 0.3,
+     edge.arrow.size = 0.1,
+     edge.color = "black",
+     vertex.size = igraph::degree(edge_graph2),
+     #vertex.label = "",
+     vertex.color = V(edge_graph2)$dem,
+     main = "Dem"
+     )
+
+plot(edge_graph2,
+     # vertex.size = igraph::degree(test_graph)/2,
+     layout = layout_nicely,
+     edge.width = 0.3,
+     edge.arrow.size = 0.1,
+     vertex.size = igraph::degree(edge_graph2),
+     vertex.label = "",
+     vertex.color = V(edge_graph2)$gni,
+     main = "GNI"
+     )
+````
+
+## Modeling ERGM
+
+````{r}
+# Import data
+
+# Bernoulli or Erdos-Renyi model
+## Import as ERGM object
+upr_network_obj <- as.network(edge_graph2)
+upr_network <- network(edge_matrix,
+                       vertex.attr = dem,
+                       vertex.attrnames = dem,
+                       directed=TRUE,
+                       )
+upr_network_obj <- graph_from_data_frame(edge_graph2)
+
+summary(upr_network)
+  
+model.bern <- ergm(edge_graph2 ~ edges)  
+flom.bern # To return just the estimates
+summary(flom.bern)
+
+gfedges <-graph_from_data_frame(d = fedges, vertices = fnodes, directed = TRUE)
+
+You should create the network object as follows -
+
+gfedges_net <- as.network(gfedges) OR gfedges_net <- asNetwork(gfedges)
+
+net <- asNetwork(edge_graph2) 
+summary(net)
+
+net.ergm <- ergm(net ~ edges)
+summary(net.ergm)
+plot(net.ergm,
+     vertex.color = net$geo)
+
+names(net.ergm)
+names(net.ergm)
+exp(net.ergm$coef) / (1 + exp(net.ergm$coef))
+
+net.ergm.sim <- simulate(net.ergm)
+simulate(net.ergm.sim, nsim=100)
+## Check observed vs simulated
+
+net.ergm.gof <- gof(net.ergm,  GOF = ~ idegree + odegree + espartners - model)
+plot(net.ergm.gof)
+?gof
+
+
+## Check GOF
+par(mfrow=c(3,2))
+plot(net, main="Observed")
+plot(net.ergm.sim, main="Simulated")
+plot(net.ergm.gof)
+par(mfrow=c(1,1)) 
+
+## Co-variate based mode:
+## Wealth: GNI
+gni_net <- net %v% 'gni' # the %v% extracts vertex  
+gni_net <- as.numeric(gni_net)
+
+plot(net, vertex.cex=gni_net/10000, displaylabels=F) 
+flom.wlth <- ergm(flomarriage ~ edges + nodecov('gni'))  
+summary(flom.wlth)  
+
+## Governance: Democracy index
+dem_net <- net %v% 'dem' # the %v% extracts vertex  
+dem_net <- as.numeric(dem_net)
+
+plot(net, vertex.cex=dem_net/10000, displaylabels=F) 
+flom.wlth <- ergm(flomarriage ~ edges + nodecov('dem'))  
+summary(flom.wlth)  
+
+## Geographical: Continent
+
+
+Hypotehesis
+# Heterophily efefect
+Structural: higher GNIs give more recommendations... lower GNIs receive morley
+
+````
+
+
+
+Useless
+````{r}
+#Import Receiver Data (REC)
+rec_edges <- read.csv("receiving.csv", #import nodes
+                 stringsAsFactors = FALSE,
+                 header = FALSE)
+
+a <- aggregate(rec_edges$V1~rec_edges$V2,rec_edges,function(x)combn(as.character(x),2,paste0,collapse=","))[2]
+a_matrix <- as.matrix(as_adj(graph_from_data_frame(read.csv(text=unique(unlist(a)),h=F),F)))
+rec_graph <- graph_from_adjacency_matrix(a_matrix, mode="undirected")
+rec_graph_simple <- simplify(rec_graph)
+
+#Output: relational matrix where edges are shared in list
+
+#Import Recommender Data (REQ)
+req_edges <- read.csv("recommenders.csv", #import nodes
+                      stringsAsFactors = FALSE,
+                      header = FALSE)
+b <- aggregate(req_edges$V1~req_edges$V2,req_edges,function(x)combn(as.character(x),2,paste0,collapse=","))[2]
+b_matrix <- as.matrix(as_adj(graph_from_data_frame(read.csv(text=unique(unlist(b)),h=F),F)))
+req_graph <- graph_from_adjacency_matrix(b_matrix, mode="undirected")
+req_graph_simple <- simplify(req_graph)
+
+#Set Node Attributes
+
+## Receivers
+rec_gni <- read.csv("receiving-gni.csv", #import nodes
+                      stringsAsFactors = FALSE,
+                      header = FALSE)
+rec_dem <- read.csv("receiving-dem-index.csv", #import nodes
+                      stringsAsFactors = FALSE,
+                      header = FALSE)
+
+vertex_attr(rec_graph_simple)
+
+### Add GNI attribute
+### Add Dem attribute
+
+## Recommenders
+req_gni <- read.csv("recommend-gni.csv", #import nodes
+                      stringsAsFactors = FALSE,
+                      header = FALSE)
+req_dem <- read.csv("recommend-dem-index.csv", #import nodes
+                      stringsAsFactors = FALSE,
+                      header = FALSE)
+
+#Plots
+plot(rec_graph_simple,
+     vertex.size = igraph::degree(rec_graph_simple)/2,
+     #edge.width = E(g)$weight,
+     layout = layout_on_sphere,
+     #repulsion = 20,
+     main = "receivers")
+
+plot(req_graph_simple,
+     vertex.size = igraph::degree(req_graph_simple)/2,
+     #edge.width = E(g)$weight,
+     layout = layout_on_sphere,
+     #repulsion = 20,
+     main = "recommenders")
+
+#Throwaway code:
+
+rec_country_array <- {} #array of countries
+for (country in rec_edges[[1]]) {
+  rec_country_array <- append(rec_country_array, country)
+  next
+}
+rec_country_array <- unique(rec_country_array)
+
+rec_category_array <- {} #array of categories
+for (category in rec_edges[[2]]) {
+  rec_category_array <- append(rec_category_array, category)
+  next
+}
+rec_category_array <- unique(rec_category_array)
+
+# Nested if statements
+rec_df_total <- matrix(0, 115, 115)
+colnames(rec_df_total) <- rec_country_array
+rownames(rec_df_total) <- rec_country_array
+
+for (i in rec_category_array) {
+  print('hello')
+  for (p in rec_country_array) {
+      print('hello2')
+    for (q in rec_edges) {
+      ifelse(rec_edges(q,1) = country(p) & rec_edges(q,2) = rec_category_array(i)) {
+        rec_def_total[i][p] = 1
+        next
+      }
+    }
+  }
+}
+
+# Attributing Democratic indicators to Recommendors 
+
+rec_dem_nodes <- read.csv("recommend-dem-index.csv",
+                   stringsAsFactors = FALSE)
+
+rec_dem_nodes_graph <- graph_from_edgelist(as.matrix(rec_dem_nodes), directed = FALSE)
+
+V(rec_dem_nodes_graph)
+rec_dem_nodes_graph <- set_vertex_attr(rec_dem_nodes_graph, "dem", V(rec_dem_nodes_graph),"")
+
+for (score in rec_dem_nodes) {
+  V(rec_dem_nodes_graph)$dem <- ifelse(rec_dem_nodes[1] == V(rec_dem_nodes_graph)$dem, name, "")
+}
+
+vertex_attr(rec_dem_nodes_graph)
+plot(rec_dem_nodes_graph)
+
+# Attribute GNI indicators to Recommendors 
+
+rec_gni_nodes <- read.csv("recommend-gni.csv",
+                   stringsAsFactors = FALSE,
+                   header=FALSE)
+
+rec_gni_nodes_graph <- graph_from_edgelist(as.matrix(rec_gni_nodes), directed = FALSE)
+
+V(rec_dem_nodes_graph)
+rec_dem_nodes_graph <- set_vertex_attr(rec_dem_nodes_graph, "dem", V(rec_dem_nodes_graph),"")
+
+for (score in rec_dem_nodes) {
+  V(rec_dem_nodes_graph)$dem <- ifelse(rec_dem_nodes[1] == V(rec_dem_nodes_graph)$dem, name, "")
+}
+
+vertex_attr(rec_dem_nodes_graph)
+plot(rec_dem_nodes_graph)
+
+# other notes
+
+for (dem in nodes) {
+  if(nodes[i] == V(edge_graph)$name[i]){ 
+    V(edge_graph)$dem[i] <- nodes[[2]][i]
+  }
+}
+
+for (countries in nodes) {
+  if(country[i] = V(edge_graph2)[i]){
+    V(edge_graph2)$dem
+  }
+  V(edge_graph2)$gni <- if(){
+  }
+  else(nodes[2] == V(edge_graph2)$gni, "1")
+  V(edge_graph2)$dem <- ifelse(nodes[3] == V(edge_graph2)$region, "1")
+}
+
+df <- graph_from_data_frame(d=edges, vertices=nodes$country)
+setdiff(unique(c(edges$Source,V(edge_graph2)$dem), unique(c(nodes$country)))
+
+# adf <- graph_from_data_frame(d=edges, vertices=nodes$Name, directed=F)
+setdiff(unique(c(edges$Source,edges$Target)), unique(c(nodes$Name)))
+
+for (i in nodes) {
+  ifelse(nodes$country == V(edge_graph2)$name, V(edge_graph2)$dem <- nodes$dem,  V(edge_graph2)$dem <- "NA")
+  next
+  #remove(countries)
+}
+
+V(edge_graph)$name[1]
+nodes$country
+
+
+for (i in nodes) {
+  print(V(edge_graph)$name[i])
+ 
+}
+
+V(edge_graph)$gni <- ifelse(nodes$country == V(edge_graph)$name, V(edge_graph)$gni <- nodes$dem,
+
+````

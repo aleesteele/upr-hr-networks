@@ -1,0 +1,381 @@
+---
+title: "final-paper"
+author: "Anne Lee Steele"
+date: "09/12/2019"
+output: html_document
+---
+# Final Project
+## Load Packages
+```{r}
+library(ergm) 
+library(sna) 
+library(coda)
+library(latticeExtra)
+library(igraph)
+library(sna)
+library(dplyr)
+library(netdiffuseR)
+library(igraph)
+library(cluster)
+library(NetCluster)
+library(network)
+library(intergraph)
+library(dplyr)
+library(stargazer)
+library(dils)
+library(RColorBrewer)
+```
+
+# Analysis
+````{r}
+data_edges <- as.data.frame(read.csv(file = "edge-list.csv", header = FALSE))
+data_edges_raw <- as.data.frame(read.csv(file = "edge-list.csv", header = FALSE))
+data_nodes <- as.data.frame(read.csv(file = "ordered.csv", header = TRUE))
+
+## Converting the edgelist to fix the vertex attributes
+data_edges <- as.matrix(get.adjacency(graph.data.frame(data_edges)))
+data_edges_graph <- graph.adjacency(data_edges)
+# data_edges_graph <- as.undirected(data_edges_graph)
+
+## Adding vertex attributes
+data_edges_graph <- set.vertex.attribute(data_edges_graph,"dem", value = data_nodes$dem)
+data_edges_graph <- set.vertex.attribute(data_edges_graph,"gni", value = data_nodes$gni)
+data_edges_graph <- set.vertex.attribute(data_edges_graph,"geo", value = data_nodes$geo)
+
+V(data_edges_graph)
+vertex.attributes(data_edges_graph)
+attributes(data_edges_graph)
+
+## Make lists
+countries <- V(data_edges_graph)$name
+gni <- V(data_edges_graph)$gni
+dem <- V(data_edges_graph)$dem
+geo <- V(data_edges_graph)$geo
+
+## Graphs
+
+par(mfrow=c(2,2))
+
+plot(data_edges_graph, #gni
+     vertex.color = data_nodes$gni,
+     vertex.size = data_nodes$gni/3500,
+     edge.arrow.size = 0.1,
+     #vertex.label = "",
+     main = "Basic")
+
+plot(data_edges_graph, #geo
+     vertex.color = data_nodes$geo,
+     vertex.size = igraph::degree(data_edges_graph),
+     edge.arrow.size = 0.1,
+     #vertex.label = "",
+     main = "Geography")
+
+plot(data_edges_graph, # dem
+     vertex.color = data_nodes$dem,
+     vertex.size = data_nodes$dem*2,
+     edge.arrow.size = 0.1,
+     #vertex.label = "",
+     main = "Democracy Index")
+
+# Final plots
+plot(data_edges_graph, #basic
+     vertex.color = data_nodes$geo,
+     vertex.size = 6,
+     edge.arrow.size = 0.1,
+     #vertex.label = "",
+     main = "Basic")
+
+plot(data_edges_graph, #combined (gni)
+     vertex.color = data_nodes$geo,
+     vertex.size = data_nodes$gni/3500,
+     edge.arrow.size = 0.1,
+     vertex.label = "",
+     main = "Gross National Income")
+
+plot(data_edges_graph, #combined (dem)
+     vertex.color = data_nodes$geo,
+     vertex.size = data_nodes$dem*1.3,
+     edge.arrow.size = 0.1,
+     vertex.label = "",
+     main = "Democracy Index")
+
+plot(data_edges_graph, #combined (degree)
+     vertex.color = data_nodes$geo,
+     vertex.size = igraph::degree(data_edges_graph),
+     edge.arrow.size = 0.1,
+     vertex.label = "",
+     main = "Degree Centrality")
+
+plot(data_edges_graph, # indegree
+     vertex.color = data_nodes$geo,
+     vertex.size = igraph::degree(data_edges_graph, mode="in")*1.5,
+     edge.arrow.size = 0.1,
+     vertex.label = "",
+     main = "In-Degree")
+
+plot(data_edges_graph, # outdegree
+     vertex.color = data_nodes$geo,
+     vertex.size = igraph::degree(data_edges_graph, mode="out")*1.5,
+     edge.arrow.size = 0.1,
+     vertex.label = "",
+     #layout = layout.fruchterman.reingold,
+     main = "Out-Degree")
+
+## Centralization
+centr_degree(data_edges_graph)$centralization # 0.1733663
+centr_betw(data_edges_graph)$centralization # 0.3295017
+centr_clo(data_edges_graph)$centralization # closeness not well-defined for disconnected graphs, 0.06517578
+centr_eigen(data_edges_graph)$centralization # 0.8779743
+
+igraph::degree(data_edges_graph)
+igraph::degree(data_edges_graph, mode="in")
+igraph::degree(data_edges_graph, mode="out")
+igraph::evcent(data_edges_graph)$vector 
+
+edge_density(data_edges_graph) # 0.01575758
+reciprocity(data_edges_graph) # 0.05128205
+transitivity(data_edges_graph) # 0.05401662
+````
+
+## Testing ERGMs
+````{r}
+######### Converting to network object + displaying the network object
+data_network <- asNetwork(data_edges_graph)
+summary(data_network)
+
+plot(data_network)
+
+help('ergm-terms') # HELP ERGM TERMS :)
+
+# DENSITY (edges) - WORKED
+net.ergm <- ergm(data_network ~ edges)
+summary(net.ergm) # Co-efficient for edges: -4.18802 
+exp(net.ergm$coef) / (1 + exp(net.ergm$coef)) # Probability of tie forming: 0.01494949 
+# The above is the density of the network... it's really not very dense.
+gden(data_network) # 0.01575758 
+#Note: every tie has about a 15% chance of being present... (double check this!)
+mcmc.diagnostics(net.ergm)
+net.ergm.gof <- gof(net.ergm)
+plot(net.ergm.gof)
+
+## RECIPROCITY (mutual)
+summary(data_network ~ edges + mutual) # 148 edges, 4 mutual
+net.ergm.rec <- ergm(data_network ~ edges + mutual, verbose=T)
+mcmc.diagnostics(net.ergm.rec)
+summary(net.ergm.rec)
+net.ergm.rec.gof <- gof(net.ergm.rec)
+plot(net.ergm.rec.gof)
+
+## CLUSTERING (gwesp) - DID NOT WORK
+summary(data_network ~ edges + gwesp)
+net.ergm.gwe <- ergm(data_network ~ edges + gwesp, verbose=T)
+summary()
+
+## PREFERENTIAL ATTACHMENT (gwidegree and gwodegree)
+summary(data_network ~ edges + gwidegree + gwodegree, verbose=T)
+net.ergm.pref.gwi <- ergm(data_network ~ edges + gwidegree + gwodegree)
+summary(data_network ~ edges + gwodegree, verbose=T)
+
+## Transitivy - DID NOT WORK
+summary(data_network ~ edges + transitive, verbose=T)
+net.ergm.tran <- ergm(data_network ~ edges + transitive, verbose=T)
+summary(net.ergm.tran)
+
+## TRIANGLES - DID NOT WORK 
+summary(data_network ~ edges + triangle) # 148 edges, 18 triangles
+net.ergm.tri <- ergm(data_network ~ edges + triangle, verbose=T)
+summary(net.ergm.tri)
+
+## DEGREES - 
+summary(data_network ~ degree)
+````
+
+# Actor-Attribute (dyadic-independent)
+````{r}
+##### GNI
+net.gni <- data_network %v% 'gni' # the %v% extracts vertex  
+summary(net.gni)
+# Min: 380, Max: 83580, Mean: 16815
+plot(data_network, vertex.cex=net.gni/15000) # PLOT GNI
+plot(net.gni)
+table(data_network %v% 'gni') 
+
+## Model GNI
+net.ergm.gni <- ergm(data_network ~ edges + nodecov('gni')) 
+summary(data_network ~ edges + nodecov('gni')) # SUMMARY OF GNI MODEL
+summary(net.ergm.gni)  
+
+exp(net.ergm.gni$coef) / (1 + exp(net.ergm.gni$coef)) 
+exp(net.ergm.gni$coef)
+# edges: 0.01629778 -> 
+# nodal cov gni: 0.4999993 -> 
+
+net.ergm.gni.in <- ergm(data_network ~ edges + nodeicov("gni")) #in fact
+summary(net.ergm.gni.in) 
+exp(net.ergm.gni.in$coef) / (1 + exp(net.ergm.gni.in$coef)) 
+# edges: 0.01432278
+# in-degree edges: 0.5000063
+
+net.ergm.gni.out <- ergm(data_network ~ edges + nodeocov("gni"))
+summary(net.ergm.gni.out)
+exp(net.ergm.gni.out$coef) / (1 + exp(net.ergm.gni.out$coef)) 
+# edges: 0.01704071
+# out-degree edges: 0.499780
+
+##### Governance: Democracy index
+net.dem <- data_network %v% 'dem' # the %v% extracts vertex  
+plot(net.dem)
+table(data_network %v% 'dem') 
+
+## Model Dem index
+summary(data_network ~ edges + nodecov('dem')) # SUMMARY OF DEM MODEL
+
+plot(data_network, vertex.cex=net.dem/4, displaylabels=F) #GRAPH DEM
+net.ergm.dem <- ergm(data_network ~ edges + nodecov('dem'))  
+summary(net.ergm.dem)  
+exp(net.ergm.dem$coef) / (1 + exp(net.ergm.dem$coef)) 
+# edges: 0.01184656
+# dem: 0.50495850
+
+net.ergm.dem.in <- ergm(data_network ~ edges + nodeicov("dem")) #in fact
+summary(net.ergm.dem.in) 
+exp(net.ergm.dem.in$coef) / (1 + exp(net.ergm.dem.in$coef)) 
+# edges: 0.01256766
+# in-degree edges: 0.50736718
+
+net.ergm.dem.out <- ergm(data_network ~ edges + nodeocov("dem"))
+summary(net.ergm.dem.out)
+exp(net.ergm.dem.out$coef) / (1 + exp(net.ergm.dem.out$coef)) 
+# edges: 0.01410684
+# out-degree edges: 0.50248749
+
+## Geographical: Continent
+net.geo <- data_network %v% 'geo' # the %v% extracts vertex  
+plot(data_network, vertex.cex=net.geo, displaylabels=F) #GRAPH DEM
+net.ergm.geo <- ergm(data_network ~ edges + nodefactor('geo'))  
+summary(net.ergm.geo)  
+
+# Model Geo
+table(data_network %v% 'geo') 
+exp(net.ergm.geo$coef) / (1 + exp(net.ergm.geo$coef)) 
+
+
+net.ergm.geo.in <- ergm(data_network ~ edges + nodeifactor("geo")) #in fact
+summary(net.ergm.geo.in) 
+# edges: 0.01256766
+# in-degree edges: 0.50736718
+
+net.ergm.geo.out <- ergm(data_network ~ edges + nodeofactor("geo"))
+summary(net.ergm.geo.out)
+exp(net.ergm.geo.out$coef) / (1 + exp(net.ergm.geo.out$coef)) 
+# edges: 0.01410684
+# out-degree edges: 0.50248749
+````
+
+# Convergence
+````{r}
+# 
+summary(data_network ~ edges + degree(1))
+net.ergm.fit <- ergm(data_network ~ edges + degree(1))
+mcmc.diagnostics(net.ergm.fit)
+
+# 
+````
+
+````{r}
+#### GOODNESS-OF-FIT (GOF)
+model.01 <- ergm(data_network ~ edges + nodecov('gni') + nodecov('dem'))
+summary(model.01) #gni if *
+
+model.02 <- ergm(data_network ~ edges + nodeicov('gni') + nodeicov('dem'))
+summary(model.02) # neither sig
+
+model.03 <- ergm(data_network ~ edges + nodeocov('gni') + nodeicov('dem'))
+summary(model.03) # GNI is sig***, Dem is * (cen) (closere)
+mcmc.diagnostics(model.03)
+
+model.04 <- ergm(data_network ~ edges + nodeicov('gni') + nodeocov('dem'))
+summary(model.04) # Gni is ., dem is sig*** (clustered around few key nodes)
+
+#### DEGENERACY
+edges, cyclicalties, gwidegree, gwodegree, gwesp, gwdsp
+````
+
+# Combined model
+````{r}
+# edges
+# 1: AG
+# 2: APG
+# 3: EE
+# 4: GRULAC
+# 5: WEOG
+
+final.01 <- ergm(data_network ~ 
+                   edges
+                 + mutual
+                 + nodeicov('gni')
+                 + nodeocov('gni')
+                 + absdiff('gni')
+                 + nodeicov('dem')
+                 + nodeocov('dem')
+                 + absdiff('dem')
+                 + nodefactor("geo"),
+                 verbose=T)
+summary(final.01)
+
+exp(final.01$coef) / (1 + exp(final.01$coef)) 
+
+final.01.dig <- mcmc.diagnostics(final.01)
+final.01.gof <- gof(final.01)
+
+plot(final.01.gof)
+
+final.02 <- ergm(data_network ~ edges 
+                 + mutual
+                 + absdiff('gni')
+                 + absdiff('dem')
+                 + absdiff("geo"),
+                 verbose=T)
+summary(final.02)
+final.02.dig <- mcmc.diagnostics(final.02)
+
+## Goodness-of-fit
+net.ergm.gof <- gof(model.05,  GOF = ~ idegree + odegree + espartners - model)
+plot(net.ergm.gof)
+
+````
+
+# Things to check for
+````{r}
+- Model Degeneracy
+- Convergence
+````
+
+# Other Important Data
+*Recommendors GNI*
+average	$23,758.11
+53/54
+Missing: The Holy See
+
+*Receivers GNI*
+average	$13,544.30
+114/115
+Missing: DPR Korea
+
+*Recommendors Democracy Index*
+average	6.345294118
+51/54
+Missing: Holy See, Liechtenstein, maldives
+
+*Receivers Democracy Index*
+average	5.376697248
+109/115
+Missing: Samoa, Somalia, South Sudan, Nauru, Kiribati, Nauru, Brunei
+
+## Sources
+
+The Economist Intelligence Unit: https://www.eiu.com/
+Universal Periodic Review Database: https://www.upr-info.org/
+World Bank: https://data.worldbank.org/
+
+Rights/Laws: https://graphcommons.com/graphs/3dcbbda0-1843-4d24-b891-c5be13dd935c?show=analysis-cluster
